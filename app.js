@@ -6,11 +6,18 @@
   const app = $("#app-content");
   const STATUS_KEY = "classmate-completion-v1";
   const THEME_KEY = "classmate-theme-v1";
+  const PERSONAL_KEY = "classmate-personal-items-v1";
+  const HUB_CACHE_KEY = "classmate-hub-cache-v1";
+  const BACKUP_VERSION = 1;
   let view = "dashboard";
   let query = "";
   let statusFilter = "all";
   let subjectFilter = "all";
+  let moduleFilter = "all";
   let completionOverrides = readJSON(localStorage, STATUS_KEY, {});
+  let personalItems = readJSON(localStorage, PERSONAL_KEY, []);
+  let hubOffline = false;
+  let editingPersonalId = null;
   let allAssignments = [];
   let allResources = [];
   let subjects = [];
@@ -111,10 +118,37 @@
   }
   function initials(name) {
     const cleaned = shortSubject(name).replace(/[^A-Za-z0-9 ]/g, " ").trim();
-    const words = cleaned.split(/\s+/).filter(Boolean);
+    const stop = new Set(["and", "of", "the", "for", "in", "to", "a", "an"]);
+    const words = cleaned.split(/\s+/).filter(Boolean).filter(w => !stop.has(w.toLowerCase()));
     if (!words.length) return "CM";
-    return words.slice(0, 2).map(w => w[0]).join("").toUpperCase();
+    return words.map(w => w[0]).join("").toUpperCase();
   }
+  function persistPersonal() {
+    try { localStorage.setItem(PERSONAL_KEY, JSON.stringify(personalItems)); } catch (_) {}
+  }
+  function addPersonalToAssignments() {
+    const subjectById = new Map(subjects.map(s => [String(s.id), s]));
+    const mine = personalItems.map(item => {
+      const subject = subjectById.get(String(item.subjectId));
+      return {
+        ...item,
+        key: `mine:${item.id}`,
+        mine: true,
+        subject: subject ? subject.name : (item.subjectName || "General"),
+        subjectId: subject ? subject.id : (item.subjectId || "general"),
+        module: item.module || null,
+        due: item.due || "",
+        link: item.link || ""
+      };
+    });
+    allAssignments = allAssignments.filter(a => !a.mine).concat(mine);
+  }
+  function allDoneItems() { return allAssignments.filter(a => getDone(a)); }
+  function openModal(title, body) {
+    const existing = $(".modal-backdrop"); if (existing) existing.remove();
+    document.body.insertAdjacentHTML("beforeend", `<div class="modal-backdrop" role="presentation"><section class="modal-card" role="dialog" aria-modal="true" aria-label="${escapeHTML(title)}"><div class="modal-head"><h2>${escapeHTML(title)}</h2><button class="modal-close" type="button" data-modal-close aria-label="Close">×</button></div>${body}</section></div>`);
+  }
+  function closeModal() { const modal = $(".modal-backdrop"); if (modal) modal.remove(); }
   function taskRow(item, card = false) {
     const done = getDone(item);
     const status = getStatus(item);
@@ -123,11 +157,12 @@
     return `<article class="${card ? "assignment-card" : "task-row"}">
       <button class="task-check ${done ? "done" : ""}" data-toggle="${escapeHTML(item.key)}" aria-label="${done ? "Mark as not completed" : "Mark as completed"}" aria-pressed="${done}">${done ? icon("check") : ""}</button>
       <div class="task-main">
-        <div class="task-title ${done ? "completed" : ""}">${escapeHTML(item.title)}</div>
+        <div class="task-title ${done ? "completed" : ""}">${escapeHTML(item.title)}${item.mine ? `<span class="mine-tag">Mine · ${escapeHTML(item.type || "assignment")}</span>` : ""}</div>
         <div class="task-meta"><span>${escapeHTML(shortSubject(item.subject))}</span><span class="meta-sep"></span><span>Module ${escapeHTML(item.module || "—")}</span></div>
         <div class="task-meta"><span class="due-chip ${chipClass}">${escapeHTML(statusLabel(item))}</span>${item.time && item.due ? `<span>${escapeHTML(item.time)}</span>` : ""}</div>
       </div>
       ${url ? `<a class="task-open" href="${escapeHTML(url)}" target="_blank" rel="noopener noreferrer" aria-label="Open assignment link">${icon("external")}</a>` : ""}
+      ${item.mine ? `<div class="task-actions"><button class="task-edit" data-edit-mine="${escapeHTML(item.id)}" aria-label="Edit personal item">✎</button><button class="task-delete" data-delete-mine="${escapeHTML(item.id)}" aria-label="Delete personal item">Delete</button></div>` : ""}
     </article>`;
   }
   function subjectRow(subject) {
@@ -149,7 +184,7 @@
   function setView(next) {
     view = next;
     $$(".nav-item,.mobile-nav-item").forEach(btn => btn.classList.toggle("active", btn.dataset.view === view));
-    const names = { dashboard: "Overview", assignments: "Assignments", subjects: "Subjects", resources: "Resources" };
+    const names = { dashboard: "Overview", assignments: "Assignments", subjects: "Subjects", resources: "Resources", done: "Done" };
     $("#breadcrumbs").innerHTML = `Workspace <span>/</span> ${names[view] || "Overview"}`;
     render();
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -162,7 +197,8 @@
     const now = new Date();
     const greeting = now.getHours() < 12 ? "Good morning" : now.getHours() < 18 ? "Good afternoon" : "Good evening";
     app.innerHTML = `
-      ${heading("YOUR STUDY SPACE", `${greeting}.<br>Let's make progress.`, "A clear view of what’s next, so you can focus on one thing at a time.", `<div class="date-pill">${icon("calendar")} ${escapeHTML(new Intl.DateTimeFormat(undefined,{weekday:"short",month:"short",day:"numeric"}).format(now))}</div>`)}
+      ${heading("YOUR STUDY SPACE", `${greeting}.<br>Let's make progress.`, "A clear view of what’s next, so you can focus on one thing at a time.", `<div class="page-actions"><button class="primary-button" data-add-mine>+ Add</button><div class="date-pill">${icon("calendar")} ${escapeHTML(new Intl.DateTimeFormat(undefined,{weekday:"short",month:"short",day:"numeric"}).format(now))}</div></div>`)}
+      ${hubOffline ? `<div class="hub-notice">Assignment Hub couldn’t be reached. Showing the last saved copy of its course data.</div>` : ""}
       <section class="stats-grid" aria-label="Assignment summary">
         <div class="stat-card"><div class="stat-top"><span class="stat-label">Total assignments</span><span class="stat-icon">${icon("bookOpen")}</span></div><div class="stat-value">${counts.total}</div><div class="stat-note">Across ${subjects.length} subjects</div></div>
         <div class="stat-card green"><div class="stat-top"><span class="stat-label">Completed</span><span class="stat-icon">${icon("check")}</span></div><div class="stat-value">${counts.completed}</div><div class="stat-note">${counts.progress}% of your workload</div></div>
@@ -182,36 +218,43 @@
           </div>
         </div>
       </section>
-      ${overdue.length ? `<section class="panel" style="margin-top:20px"><div class="panel-head"><h2>Needs attention</h2><span class="due-chip overdue">${overdue.length} overdue</span></div><div class="panel-body"><div class="task-list">${overdue.map(a => taskRow(a)).join("")}</div></div></section>` : ""}`;
+      ${overdue.length ? `<section class="panel" style="margin-top:20px"><div class="panel-head"><h2>Needs attention</h2><span class="due-chip overdue">${overdue.length} overdue</span></div><div class="panel-body"><div class="task-list">${overdue.map(a => taskRow(a)).join("")}</div></div></section>` : ""}
+      ${backupPanel()}`;
   }
   function renderAssignments() {
     const filtered = allAssignments.filter(item => {
       const matchesQuery = !query || [item.title,item.subject,item.module].join(" ").toLowerCase().includes(query.toLowerCase());
       const status = getStatus(item);
       const matchesStatus = statusFilter === "all" || (statusFilter === "pending" && !getDone(item)) || statusFilter === status;
-      const matchesSubject = subjectFilter === "all" || item.subjectId === subjectFilter;
-      return matchesQuery && matchesStatus && matchesSubject;
+      const matchesSubject = subjectFilter === "all" || String(item.subjectId) === String(subjectFilter);
+      const matchesModule = moduleFilter === "all" || String(item.module || "") === String(moduleFilter);
+      return matchesQuery && matchesStatus && matchesSubject && matchesModule;
     }).sort((a,b) => {
       if (getDone(a) !== getDone(b)) return getDone(a) ? 1 : -1;
       if (!a.due) return 1; if (!b.due) return -1;
       return localDate(a.due) - localDate(b.due);
     });
-    app.innerHTML = `${heading("STAY ON TOP OF IT", "Assignments", "Every task in one place. Filter the list and mark things done as you go.")}
+    app.innerHTML = `${heading("STAY ON TOP OF IT", "Assignments", "Every task in one place. Filter the list and mark things done as you go.", `<button class="primary-button" data-add-mine>+ Add</button>`)}
+      ${hubOffline ? `<div class="hub-notice">Assignment Hub couldn’t be reached. Showing the last saved copy of its course data.</div>` : ""}
       <div class="filter-bar"><label class="filter-search">${icon("search")}<input id="list-search" type="search" value="${escapeHTML(query)}" placeholder="Search by title or subject..." aria-label="Search assignments"></label>
         <select id="status-filter" aria-label="Filter by status"><option value="all">All statuses</option><option value="pending">Not completed</option><option value="soon">Due soon</option><option value="overdue">Overdue</option><option value="completed">Completed</option><option value="no-date">No deadline</option></select>
         <select id="subject-filter" aria-label="Filter by subject"><option value="all">All subjects</option>${subjects.map(s => `<option value="${escapeHTML(s.id)}">${escapeHTML(shortSubject(s.name))}</option>`).join("")}</select>
+        <select id="module-filter" aria-label="Filter by module"><option value="all">All modules</option>${[...new Set(allAssignments.filter(a => a.module && (subjectFilter === "all" || String(a.subjectId)===String(subjectFilter))).map(a => String(a.module)))].map(m => `<option value="${escapeHTML(m)}">Module ${escapeHTML(m)}</option>`).join("")}</select>
       </div>
       <p class="results-count">${filtered.length} ${filtered.length === 1 ? "assignment" : "assignments"} found</p>
-      <div class="assignment-list">${filtered.length ? filtered.map(a => taskRow(a,true)).join("") : emptyState("No assignments match", "Try changing your search or filters.")}</div>`;
+      <div class="assignment-list">${filtered.length ? filtered.map(a => taskRow(a,true)).join("") : emptyState("No assignments match", "Try changing your search or filters.")}</div>${backupPanel()}`;
     $("#status-filter").value = statusFilter;
     $("#subject-filter").value = subjectFilter;
+    $("#module-filter").value = moduleFilter;
     $("#list-search").addEventListener("input", e => { query = e.target.value; const pos = e.target.selectionStart; renderAssignments(); const input = $("#list-search"); input.focus(); input.setSelectionRange(pos,pos); });
     $("#status-filter").addEventListener("change", e => { statusFilter = e.target.value; renderAssignments(); });
-    $("#subject-filter").addEventListener("change", e => { subjectFilter = e.target.value; renderAssignments(); });
+    $("#subject-filter").addEventListener("change", e => { subjectFilter = e.target.value; moduleFilter = "all"; renderAssignments(); });
+    $("#module-filter").addEventListener("change", e => { moduleFilter = e.target.value; renderAssignments(); });
   }
   function renderSubjects() {
     const counts = getCounts();
-    app.innerHTML = `${heading("YOUR CLASSES", "Subjects", "Jump into a course to see its assignments and learning resources.")}
+    app.innerHTML = `${heading("YOUR CLASSES", "Subjects", "Jump into a course to see its assignments and learning resources.", `<button class="primary-button" data-add-mine>+ Add</button>`)}
+      ${hubOffline ? `<div class="hub-notice">Assignment Hub couldn’t be reached. Showing the last saved copy of its course data.</div>` : ""}
       <div class="source-note"><strong>${subjects.length} subjects connected.</strong> ClassMate reads course information from the public Assignment Hub data file.</div>
       <div class="subject-grid">${subjects.map(s => {
         const list = allAssignments.filter(a => a.subjectId === s.id);
@@ -226,9 +269,10 @@
       { label: "Reading list", icon: "bookOpen", items: allResources.filter(r => r.kind === "reading") },
       { label: "Lecture notes", icon: "file", items: allResources.filter(r => r.kind === "note") }
     ];
-    app.innerHTML = `${heading("REFERENCE LIBRARY", "Resources", "Readings and lecture materials linked to your subjects.")}
+    app.innerHTML = `${heading("REFERENCE LIBRARY", "Resources", "Readings and lecture materials linked to your subjects.", `<button class="primary-button" data-add-mine>+ Add</button>`)}
+      ${hubOffline ? `<div class="hub-notice">Assignment Hub couldn’t be reached. Showing the last saved copy of its course data.</div>` : ""}
       <div class="filter-bar"><label class="filter-search">${icon("search")}<input id="resource-search" type="search" value="${escapeHTML(query)}" placeholder="Search resources..." aria-label="Search resources"></label><select id="resource-subject" aria-label="Filter resources by subject"><option value="all">All subjects</option>${subjects.map(s => `<option value="${escapeHTML(s.id)}">${escapeHTML(shortSubject(s.name))}</option>`).join("")}</select></div>
-      <div id="resource-results" class="resource-groups"></div>`;
+      <div id="resource-results" class="resource-groups"></div>${backupPanel()}`;
     $("#resource-subject").value = subjectFilter;
     function drawResources() {
       const q = $("#resource-search").value.toLowerCase();
@@ -248,21 +292,33 @@
     else if (view === "assignments") renderAssignments();
     else if (view === "subjects") renderSubjects();
     else if (view === "resources") renderResources();
+    else if (view === "done") renderDone();
     updateCounts();
     renderIcons();
   }
   function updateCounts() {
     const counts = getCounts();
     $("#nav-pending").textContent = counts.pending;
+    const doneNav = $("#nav-done"); if (doneNav) doneNav.textContent = counts.completed;
   }
   function loadSource() {
-    if (typeof SUBJECTS === "undefined" || !Array.isArray(SUBJECTS)) {
-      app.innerHTML = `<div class="error-card"><h2>Couldn’t load Assignment Hub data</h2><p>The data file did not load or its structure changed. Check your connection and try again. If this persists, open the source repository to confirm that <code>data.js</code> is public.</p><button class="primary-button" id="retry-load">Try again</button></div>`;
+    let sourceSubjects = typeof SUBJECTS !== "undefined" && Array.isArray(SUBJECTS) ? SUBJECTS : null;
+    let sourceGeneral = typeof GENERAL !== "undefined" && Array.isArray(GENERAL) ? GENERAL : [];
+    if (sourceSubjects) {
+      try { localStorage.setItem(HUB_CACHE_KEY, JSON.stringify({ subjects: sourceSubjects, general: sourceGeneral, savedAt: new Date().toISOString() })); } catch (_) {}
+    } else {
+      const cached = readJSON(localStorage, HUB_CACHE_KEY, null);
+      if (cached && Array.isArray(cached.subjects)) {
+        sourceSubjects = cached.subjects; sourceGeneral = Array.isArray(cached.general) ? cached.general : []; hubOffline = true;
+      }
+    }
+    if (!sourceSubjects) {
+      app.innerHTML = `<div class="error-card"><h2>Couldn’t load Assignment Hub data</h2><p>The live data and saved copy are unavailable. Check your connection and try again.</p><button class="primary-button" id="retry-load">Try again</button></div>`;
       $("#retry-load").addEventListener("click", () => location.reload());
       return;
     }
-    subjects = SUBJECTS;
-    general = typeof GENERAL !== "undefined" && Array.isArray(GENERAL) ? GENERAL : [];
+    subjects = sourceSubjects;
+    general = sourceGeneral;
     allAssignments = [];
     allResources = [];
     subjects.forEach(subject => {
@@ -271,14 +327,82 @@
       (subject.notes || []).forEach((item, i) => allResources.push({...item, kind: "note", subject: subject.name, subjectId: subject.id, key: `${subject.id}:note:${item.id || i}`}));
     });
     general.forEach((item, i) => allAssignments.push({...item, subject:"General", subjectId:"general", key:`general:${item.id || "assignment"}:${i}`, module:null}));
+    addPersonalToAssignments();
     render();
   }
   function toggleCompletion(key) {
     const item = allAssignments.find(a => a.key === key);
     if (!item) return;
-    completionOverrides[key] = !getDone(item);
+    if (getDone(item)) { setCompletion(item, false); return; }
+    openModal("Mark as done?", `<p>Mark <strong>${escapeHTML(item.title)}</strong> as completed? You can find it in the Done folder and restore it any time.</p><div class="confirm-actions"><button class="secondary-button" data-modal-close>Cancel</button><button class="primary-button" data-confirm-done="${escapeHTML(key)}">Yes, mark done</button></div>`);
+  }
+  function setCompletion(item, value) {
+    completionOverrides[item.key] = Boolean(value);
     try { localStorage.setItem(STATUS_KEY, JSON.stringify(completionOverrides)); } catch (_) {}
-    render();
+    closeModal(); render();
+  }
+  function renderDone() {
+    const done = allDoneItems().sort((a,b) => (a.title || "").localeCompare(b.title || ""));
+    app.innerHTML = `${heading("YOUR WINS", "Done", "Completed work stays here. Untick any item to bring it back.", `<button class="primary-button" data-add-mine>+ Add</button>`)}
+      <div class="assignment-list">${done.length ? done.map(a => taskRow(a,true)).join("") : emptyState("Nothing completed yet", "When you finish something, confirm it and it will be saved here.")}</div>
+      ${backupPanel()}`;
+  }
+  function backupPanel() {
+    return `<section class="backup-panel"><h2>Your data, your device</h2><p>Personal items and completion states stay in this browser. Copy a backup to move them to another device. Assignment Hub course data is not included because it can be reloaded from the hub.</p><div class="backup-actions"><button class="secondary-button" data-copy-backup>Copy backup</button><button class="secondary-button" data-restore-backup>Restore backup</button><input id="backup-file" type="file" accept="application/json,.json" hidden></div></section>`;
+  }
+  function subjectModuleOptions(selectedSubject = "", selectedModule = "") {
+    const subjectOptions = subjects.map(s => `<option value="${escapeHTML(s.id)}" ${String(s.id)===String(selectedSubject)?"selected":""}>${escapeHTML(s.name)}</option>`).join("");
+    const modules = [...new Set(allAssignments.filter(a => String(a.subjectId)===String(selectedSubject) && a.module).map(a => String(a.module)))];
+    return { subjectOptions, moduleOptions: modules.map(m => `<option value="${escapeHTML(m)}" ${m===String(selectedModule)?"selected":""}>${escapeHTML(m)}</option>`).join("") };
+  }
+  function showPersonalForm(id = null) {
+    const item = id ? personalItems.find(x => String(x.id)===String(id)) : null;
+    editingPersonalId = id;
+    const opts = subjectModuleOptions(item?.subjectId || "", item?.module || "");
+    openModal(item ? "Edit your item" : "Add to ClassMate", `<form id="personal-form" class="item-form">
+      <label class="full">Title *<input name="title" required maxlength="180" value="${escapeHTML(item?.title || "")}" placeholder="e.g. Finish seminar reflection"></label>
+      <label>Type<select name="type"><option value="assignment" ${item?.type==="assignment"?"selected":""}>Assignment</option><option value="reading" ${item?.type==="reading"?"selected":""}>Reading</option><option value="reminder" ${item?.type==="reminder"?"selected":""}>Reminder</option></select></label>
+      <label>Due date<input name="due" type="date" value="${escapeHTML(item?.due || "")}"></label>
+      <label>Optional time<input name="time" type="time" value="${escapeHTML(item?.time || "")}"></label>
+      <label>Subject (optional)<select name="subjectId"><option value="">No subject</option>${opts.subjectOptions}</select></label>
+      <label>Module (optional)<select name="module" id="mine-module"><option value="">No module</option>${opts.moduleOptions}</select></label>
+      <label class="full">Link (optional)<input name="link" type="url" value="${escapeHTML(item?.link || "")}" placeholder="https://..."></label>
+      <div class="form-actions"><button type="button" class="secondary-button" data-modal-close>Cancel</button><button type="submit" class="primary-button">${item ? "Save changes" : "Add item"}</button></div>
+    </form>`);
+    const form = $("#personal-form");
+    form.elements.subjectId.addEventListener("change", () => {
+      const next = subjectModuleOptions(form.elements.subjectId.value, "");
+      $("#mine-module").innerHTML = `<option value="">No module</option>${next.moduleOptions}`;
+    });
+    form.addEventListener("submit", event => {
+      event.preventDefault();
+      const data = new FormData(form);
+      const subject = subjects.find(s => String(s.id)===String(data.get("subjectId")));
+      const next = { id: item?.id || `mine-${Date.now()}-${Math.random().toString(36).slice(2,7)}`, title: String(data.get("title")||"").trim(), type: String(data.get("type")||"assignment"), due: String(data.get("due")||""), time: String(data.get("time")||""), subjectId: String(data.get("subjectId")||""), subjectName: subject?.name || "General", module: String(data.get("module")||""), link: safeURL(String(data.get("link")||"")) };
+      if (!next.title) return;
+      if (item) personalItems = personalItems.map(old => String(old.id)===String(item.id) ? next : old); else personalItems.push(next);
+      persistPersonal();
+      allAssignments = allAssignments.filter(a => !a.mine);
+      addPersonalToAssignments(); closeModal(); render();
+    });
+  }
+  async function copyBackup() {
+    const payload = JSON.stringify({ app: "ClassMate", version: BACKUP_VERSION, exportedAt: new Date().toISOString(), personalItems, completionOverrides }, null, 2);
+    try { await navigator.clipboard.writeText(payload); openModal("Backup copied", `<p>Your ClassMate backup is on the clipboard. Paste it into a file or note so you can restore it on another device.</p><div class="confirm-actions"><button class="primary-button" data-modal-close>Done</button></div>`); }
+    catch (_) { openModal("Copy backup", `<p>Clipboard access was blocked. Copy the JSON below and save it as a backup file.</p><textarea style="width:100%;min-height:220px" readonly>${escapeHTML(payload)}</textarea><div class="confirm-actions"><button class="primary-button" data-modal-close>Close</button></div>`); const ta = $(".modal-card textarea"); ta.focus(); ta.select(); }
+  }
+  function restoreBackupText(text) {
+    try {
+      const data = JSON.parse(text);
+      if (data?.app !== "ClassMate" || data.version !== BACKUP_VERSION || !Array.isArray(data.personalItems) || !data.completionOverrides || typeof data.completionOverrides !== "object") throw new Error("This file does not look like a supported ClassMate backup.");
+      if (!confirm("Restore this backup? It will replace personal items and completion states currently saved in this browser.")) return;
+      personalItems = data.personalItems.filter(x => x && typeof x.title === "string" && x.id).map(x => ({...x, title:x.title.slice(0,180), link:safeURL(x.link || "")}));
+      completionOverrides = data.completionOverrides;
+      persistPersonal();
+      try { localStorage.setItem(STATUS_KEY, JSON.stringify(completionOverrides)); } catch (_) {}
+      allAssignments = allAssignments.filter(a => !a.mine); addPersonalToAssignments(); closeModal(); render();
+      openModal("Backup restored", `<p>Your personal items and completion states have been restored on this browser.</p><div class="confirm-actions"><button class="primary-button" data-modal-close>Done</button></div>`);
+    } catch (error) { openModal("Couldn’t restore backup", `<p>${escapeHTML(error.message || "The backup file could not be read.")}</p><div class="confirm-actions"><button class="primary-button" data-modal-close>Close</button></div>`); }
   }
   function setTheme(theme) {
     document.documentElement.dataset.theme = theme;
@@ -297,11 +421,31 @@
     if (goButton) { setView(goButton.dataset.go); return; }
     const toggle = event.target.closest("[data-toggle]");
     if (toggle) { toggleCompletion(toggle.dataset.toggle); return; }
+    if (event.target.closest("[data-add-mine]")) { showPersonalForm(); return; }
+    const confirmDone = event.target.closest("[data-confirm-done]");
+    if (confirmDone) { const item = allAssignments.find(a => a.key === confirmDone.dataset.confirmDone); if (item) setCompletion(item, true); return; }
+    if (event.target.closest("[data-modal-close]")) { closeModal(); return; }
+    const editMine = event.target.closest("[data-edit-mine]");
+    if (editMine) { showPersonalForm(editMine.dataset.editMine); return; }
+    const deleteMine = event.target.closest("[data-delete-mine]");
+    if (deleteMine) {
+      const item = personalItems.find(x => String(x.id)===String(deleteMine.dataset.deleteMine));
+      if (item && confirm(`Delete “${item.title}” from your personal items?`)) { personalItems = personalItems.filter(x => String(x.id)!==String(item.id)); delete completionOverrides[`mine:${item.id}`]; persistPersonal(); try { localStorage.setItem(STATUS_KEY, JSON.stringify(completionOverrides)); } catch (_) {} allAssignments = allAssignments.filter(a => !a.mine); addPersonalToAssignments(); render(); }
+      return;
+    }
+    if (event.target.closest("[data-copy-backup]")) { copyBackup(); return; }
+    if (event.target.closest("[data-restore-backup]")) { const file = $("#backup-file"); if (file) file.click(); return; }
     const subject = event.target.closest("[data-subject-open]");
     if (subject) {
-      view = "assignments"; query = ""; statusFilter = "all"; subjectFilter = subject.dataset.subjectOpen;
+      view = "assignments"; query = ""; statusFilter = "all"; subjectFilter = subject.dataset.subjectOpen; moduleFilter = "all";
       setView("assignments");
       return;
+    }
+  });
+  document.addEventListener("change", event => {
+    if (event.target.id === "backup-file" && event.target.files?.[0]) {
+      const file = event.target.files[0]; const reader = new FileReader();
+      reader.onload = () => restoreBackupText(String(reader.result || "")); reader.onerror = () => openModal("Couldn’t read backup", `<p>Please choose a valid ClassMate JSON backup.</p>`); reader.readAsText(file); event.target.value = "";
     }
   });
   $("#theme-toggle").addEventListener("click", toggleTheme);

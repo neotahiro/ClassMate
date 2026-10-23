@@ -42,3 +42,13 @@ No build step or package installation is required.
 - The site needs an internet connection to load the source data and Google Fonts.
 - If the source file is renamed, moved, or its data structure changes, update `index.html` / `app.js`.
 - Test the deployed URL on both a phone and desktop before sharing it with classmates.
+
+## Personal planner features
+
+- **Done folder:** marking an assignment complete asks for confirmation. Completed items remain available under Done and can be unticked to restore them.
+- **Subject initials:** subject marks use initials across the subject name, omitting common connector words such as “and” and “of”.
+- **Personal items:** use **+ Add** for an assignment, reading, or reminder. Items are marked **Mine** and can be edited or deleted. Personal data is stored in this browser's local storage.
+- **Backups:** use **Copy backup** to copy personal items and completion states as JSON, and **Restore backup** to import that JSON on another device. Restore replaces the current local personal data after confirmation.
+- **Offline hub fallback:** after Assignment Hub data loads successfully once, ClassMate saves a browser-local copy. If the live hub data is unavailable on a later visit, it uses that copy and displays a notice.
+
+Privacy note: ClassMate does not upload personal items or completion states to a ClassMate server. They remain in this browser unless the student explicitly copies/exports a backup. Clearing browser site data can remove them, so keep a backup if they matter. Public hosting providers may still process ordinary web request logs. The live Assignment Hub data remains public source data.
