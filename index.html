@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#15803d">
+  <meta name="description" content="ClassMate — your class, your tasks, all in one place.">
+  <title>ClassMate · Your study space</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+  <!-- Assignment Hub is the read-only source of coursework data. -->
+  <script src="https://cdn.jsdelivr.net/gh/neotahiro/assignment-hub@main/data.js"></script>
+  <script defer src="app.js"></script>
+</head>
+<body>
+  <div class="app-shell">
+    <aside class="sidebar" aria-label="Main navigation">
+      <a class="brand" href="#dashboard" aria-label="ClassMate home">
+        <span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3.5 5.7c3.1-.9 5.8-.3 8.5 1.5v12c-2.7-1.8-5.4-2.4-8.5-1.5z"/><path d="M20.5 5.7c-3.1-.9-5.8-.3-8.5 1.5v12c2.7-1.8 5.4-2.4 8.5-1.5z"/></svg></span>
+        <span class="brand-name">ClassMate<span class="brand-dot">.</span><small>YOUR STUDY SPACE</small></span>
+      </a>
+      <div class="nav-label">WORKSPACE</div>
+      <nav class="side-nav">
+        <button class="nav-item active" data-view="dashboard"><span class="nav-icon" data-icon="grid"></span><span>Overview</span></button>
+        <button class="nav-item" data-view="assignments"><span class="nav-icon" data-icon="check-square"></span><span>Assignments</span><span class="nav-count" id="nav-pending">—</span></button>
+        <button class="nav-item" data-view="subjects"><span class="nav-icon" data-icon="book"></span><span>Subjects</span></button>
+        <button class="nav-item" data-view="resources"><span class="nav-icon" data-icon="folder"></span><span>Resources</span></button>
+      </nav>
+      <div class="sidebar-bottom">
+        <div class="sidebar-tip"><span class="tip-icon" data-icon="sparkles"></span><strong>One thing at a time.</strong><p>Small steps add up. Pick your next task and get started.</p></div>
+        <button class="theme-toggle" id="theme-toggle"><span class="nav-icon" data-icon="moon"></span><span id="theme-label">Dark appearance</span><span class="toggle-track"><span></span></span></button>
+        <div class="sidebar-foot"><span class="status-dot"></span> Connected to Assignment Hub</div>
+      </div>
+    </aside>
+
+    <main class="main-area">
+      <header class="topbar">
+        <div class="mobile-brand"><span class="brand-mark" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M3.5 5.7c3.1-.9 5.8-.3 8.5 1.5v12c-2.7-1.8-5.4-2.4-8.5-1.5z"/><path d="M20.5 5.7c-3.1-.9-5.8-.3-8.5 1.5v12c2.7-1.8 5.4-2.4 8.5-1.5z"/></svg></span><strong>ClassMate<span class="brand-dot">.</span></strong></div>
+        <div class="breadcrumbs" id="breadcrumbs">Workspace <span>/</span> Overview</div>
+        <div class="topbar-actions">
+          <label class="global-search"><span data-icon="search"></span><input id="global-search" type="search" placeholder="Search assignments..." autocomplete="off" aria-label="Search assignments"><kbd>⌘ K</kbd></label>
+          <button class="icon-button mobile-theme" id="mobile-theme-toggle" aria-label="Toggle theme"><span data-icon="moon"></span></button>
+          <a class="source-link" href="https://github.com/neotahiro/assignment-hub" target="_blank" rel="noopener noreferrer"><span data-icon="external"></span><span>Source</span></a>
+        </div>
+      </header>
+      <div id="app-content" class="content" aria-live="polite">
+        <div class="loading-state"><span class="loader"></span><p>Loading your study space…</p></div>
+      </div>
+      <footer class="main-footer"><span>Made for your next academic win.</span><span>ClassMate <span class="brand-dot">•</span> Assignment Hub data</span></footer>
+    </main>
+  </div>
+  <nav class="mobile-nav" aria-label="Mobile navigation">
+    <button class="mobile-nav-item active" data-view="dashboard"><span data-icon="grid"></span><small>Home</small></button>
+    <button class="mobile-nav-item" data-view="assignments"><span data-icon="check-square"></span><small>Tasks</small></button>
+    <button class="mobile-nav-item" data-view="subjects"><span data-icon="book"></span><small>Subjects</small></button>
+    <button class="mobile-nav-item" data-view="resources"><span data-icon="folder"></span><small>Files</small></button>
+  </nav>
+  <noscript><p class="noscript">ClassMate needs JavaScript enabled to load your coursework.</p></noscript>
+</body>
+</html>
