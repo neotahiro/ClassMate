@@ -360,7 +360,7 @@
     editingPersonalId = id;
     const opts = subjectModuleOptions(item?.subjectId || "", item?.module || "");
     openModal(item ? "Edit your item" : "Add to ClassMate", `<form id="personal-form" class="item-form">
-      <label class="full">Title *<input name="title" required maxlength="180" value="${escapeHTML(item?.title || "")}" placeholder="e.g. Finish seminar reflection"></label>
+      <label class="full">Title *<input name="title" required maxlength="180" value="${escapeHTML(item?.title || "")}" placeholder="e.g. Finish the reflection note"></label>
       <label>Type<select name="type"><option value="assignment" ${item?.type==="assignment"?"selected":""}>Assignment</option><option value="reading" ${item?.type==="reading"?"selected":""}>Reading</option><option value="reminder" ${item?.type==="reminder"?"selected":""}>Reminder</option></select></label>
       <label>Due date<input name="due" type="date" value="${escapeHTML(item?.due || "")}"></label>
       <label>Optional time<input name="time" type="time" value="${escapeHTML(item?.time || "")}"></label>
