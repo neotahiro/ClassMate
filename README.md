@@ -27,22 +27,6 @@ This is a static, read-only integration. ClassMate does **not** write changes ba
 
 For shared completion states or edits that update the repository, a backend or authenticated GitHub API integration would be needed. Do not put a GitHub token in client-side JavaScript.
 
-## Deploy on GitHub Pages
-
-1. Create a new public repository named `classmate`.
-2. Upload `index.html`, `styles.css`, `app.js`, and this `README.md` to the repository root.
-3. In the repository, open **Settings → Pages**.
-4. Choose **Deploy from a branch**, select `main` and `/ (root)`, then save.
-5. Wait for the deployment and open the URL GitHub Pages provides.
-
-No build step or package installation is required.
-
-## Notes
-
-- The site needs an internet connection to load the source data and Google Fonts.
-- If the source file is renamed, moved, or its data structure changes, update `index.html` / `app.js`.
-- Test the deployed URL on both a phone and desktop before sharing it with classmates.
-
 ## Personal planner features
 
 - **Done folder:** marking an assignment complete asks for confirmation. Completed items remain available under Done and can be unticked to restore them.
