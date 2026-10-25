@@ -22,6 +22,7 @@
   let allResources = [];
   let subjects = [];
   let general = [];
+  let notices = [];
 
   const icons = {
     grid: '<svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1.5"/><rect x="14" y="3" width="7" height="7" rx="1.5"/><rect x="3" y="14" width="7" height="7" rx="1.5"/><rect x="14" y="14" width="7" height="7" rx="1.5"/></svg>',
@@ -189,6 +190,67 @@
     render();
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
+  
+function renderNotices() {
+  if (!Array.isArray(notices) || notices.length === 0) return "";
+
+  function displayDate(value) {
+    if (!value) return "";
+    const d = localDate(value);
+    if (!d) return "";
+    return new Intl.DateTimeFormat(undefined, {
+      weekday: "short",
+      month: "short",
+      day: "numeric"
+    }).format(d);
+  }
+
+  const sorted = [...notices].sort((a, b) =>
+    String(b.date || "").localeCompare(String(a.date || ""))
+  );
+
+  return `
+    <section class="panel" style="margin-bottom:20px">
+      <div class="panel-head">
+        <h2>Announcements</h2>
+        <span class="muted">${sorted.length} ${
+          sorted.length === 1 ? "notice" : "notices"
+        }</span>
+      </div>
+      <div class="panel-body">
+        <div style="display:grid;gap:14px">
+          ${sorted.map(notice => {
+            const link = safeURL(notice.link || "");
+            const posted = displayDate(notice.date);
+            const on = displayDate(notice.on);
+            const until = displayDate(notice.until);
+
+            const timing = [
+              on ? `For ${on}` : "",
+              until ? `through ${until}` : ""
+            ].filter(Boolean).join(" ");
+
+            return `
+              <article style="padding:14px;border:1px solid var(--border-color, #e5e7eb);border-radius:12px">
+                <h3 style="margin:0 0 8px;font-size:1rem">
+                  ${escapeHTML(notice.title || "Announcement")}
+                </h3>
+                <div style="white-space:pre-line;line-height:1.6">
+                  ${escapeHTML(notice.text || "")}
+                </div>
+                <div style="display:flex;flex-wrap:wrap;gap:8px 14px;align-items:center;margin-top:10px;font-size:.82rem;opacity:.8">
+                  ${posted ? `<span>Posted ${escapeHTML(posted)}</span>` : ""}
+                  ${timing ? `<span>${escapeHTML(timing)}</span>` : ""}
+                  ${link ? `<a href="${escapeHTML(link)}" target="_blank" rel="noopener noreferrer">Open details ↗</a>` : ""}
+                </div>
+              </article>
+            `;
+          }).join("")}
+        </div>
+      </div>
+    </section>
+  `;
+}
   function renderDashboard() {
     const counts = getCounts();
     const upcoming = allAssignments.filter(a => !getDone(a) && a.due && daysUntil(a.due) >= 0).sort((a,b) => (localDate(a.due) - localDate(b.due))).slice(0, 5);
@@ -199,7 +261,8 @@
     app.innerHTML = `
       ${heading("YOUR STUDY SPACE", `${greeting}.<br>Let's make progress.`, "A clear view of what’s next, so you can focus on one thing at a time.", `<div class="page-actions"><button class="primary-button" data-add-mine>+ Add</button><div class="date-pill">${icon("calendar")} ${escapeHTML(new Intl.DateTimeFormat(undefined,{weekday:"short",month:"short",day:"numeric"}).format(now))}</div></div>`)}
       ${hubOffline ? `<div class="hub-notice">Assignment Hub couldn’t be reached. Showing the last saved copy of its course data.</div>` : ""}
-      <section class="stats-grid" aria-label="Assignment summary">
+${renderNotices()}
+<section class="stats-grid" aria-label="Assignment summary">
         <div class="stat-card"><div class="stat-top"><span class="stat-label">Total assignments</span><span class="stat-icon">${icon("bookOpen")}</span></div><div class="stat-value">${counts.total}</div><div class="stat-note">Across ${subjects.length} subjects</div></div>
         <div class="stat-card green"><div class="stat-top"><span class="stat-label">Completed</span><span class="stat-icon">${icon("check")}</span></div><div class="stat-value">${counts.completed}</div><div class="stat-note">${counts.progress}% of your workload</div></div>
         <div class="stat-card amber"><div class="stat-top"><span class="stat-label">Due soon</span><span class="stat-icon">${icon("clock")}</span></div><div class="stat-value">${counts.dueSoon}</div><div class="stat-note">Due within the next 7 days</div></div>
@@ -301,36 +364,115 @@
     $("#nav-pending").textContent = counts.pending;
     const doneNav = $("#nav-done"); if (doneNav) doneNav.textContent = counts.completed;
   }
-  function loadSource() {
-    let sourceSubjects = typeof SUBJECTS !== "undefined" && Array.isArray(SUBJECTS) ? SUBJECTS : null;
-    let sourceGeneral = typeof GENERAL !== "undefined" && Array.isArray(GENERAL) ? GENERAL : [];
-    if (sourceSubjects) {
-      try { localStorage.setItem(HUB_CACHE_KEY, JSON.stringify({ subjects: sourceSubjects, general: sourceGeneral, savedAt: new Date().toISOString() })); } catch (_) {}
-    } else {
-      const cached = readJSON(localStorage, HUB_CACHE_KEY, null);
-      if (cached && Array.isArray(cached.subjects)) {
-        sourceSubjects = cached.subjects; sourceGeneral = Array.isArray(cached.general) ? cached.general : []; hubOffline = true;
-      }
+
+function loadSource() {
+  let sourceSubjects =
+    typeof SUBJECTS !== "undefined" && Array.isArray(SUBJECTS)
+      ? SUBJECTS
+      : null;
+
+  let sourceGeneral =
+    typeof GENERAL !== "undefined" && Array.isArray(GENERAL)
+      ? GENERAL
+      : [];
+
+  let sourceNotices =
+    typeof NOTICES !== "undefined" && Array.isArray(NOTICES)
+      ? NOTICES
+      : [];
+
+  if (sourceSubjects) {
+    try {
+      localStorage.setItem(
+        HUB_CACHE_KEY,
+        JSON.stringify({
+          subjects: sourceSubjects,
+          general: sourceGeneral,
+          notices: sourceNotices,
+          savedAt: new Date().toISOString()
+        })
+      );
+    } catch (_) {}
+  } else {
+    const cached = readJSON(localStorage, HUB_CACHE_KEY, null);
+
+    if (cached && Array.isArray(cached.subjects)) {
+      sourceSubjects = cached.subjects;
+      sourceGeneral = Array.isArray(cached.general)
+        ? cached.general
+        : [];
+      sourceNotices = Array.isArray(cached.notices)
+        ? cached.notices
+        : [];
+      hubOffline = true;
     }
-    if (!sourceSubjects) {
-      app.innerHTML = `<div class="error-card"><h2>Couldn’t load Assignment Hub data</h2><p>The live data and saved copy are unavailable. Check your connection and try again.</p><button class="primary-button" id="retry-load">Try again</button></div>`;
-      $("#retry-load").addEventListener("click", () => location.reload());
-      return;
-    }
-    subjects = sourceSubjects;
-    general = sourceGeneral;
-    allAssignments = [];
-    allResources = [];
-    subjects.forEach(subject => {
-      (subject.assignments || []).forEach((item, i) => allAssignments.push({...item, subject: subject.name, subjectId: subject.id, key: `${subject.id}:${item.id || "assignment"}:${i}`, module: item.module || null}));
-      (subject.readings || []).forEach((item, i) => allResources.push({...item, kind: "reading", subject: subject.name, subjectId: subject.id, key: `${subject.id}:reading:${item.id || i}`}));
-      (subject.notes || []).forEach((item, i) => allResources.push({...item, kind: "note", subject: subject.name, subjectId: subject.id, key: `${subject.id}:note:${item.id || i}`}));
-    });
-    general.forEach((item, i) => allAssignments.push({...item, subject:"General", subjectId:"general", key:`general:${item.id || "assignment"}:${i}`, module:null}));
-    addPersonalToAssignments();
-    render();
   }
-  function toggleCompletion(key) {
+
+  if (!sourceSubjects) {
+    app.innerHTML = `
+      <div class="error-card">
+        <h2>Couldn’t load Assignment Hub data</h2>
+        <p>The live data and saved copy are unavailable. Check your connection and try again.</p>
+        <button class="primary-button" id="retry-load">Try again</button>
+      </div>
+    `;
+    $("#retry-load").addEventListener("click", () => location.reload());
+    return;
+  }
+
+  subjects = sourceSubjects;
+  general = sourceGeneral;
+  notices = sourceNotices;
+
+  allAssignments = [];
+  allResources = [];
+
+  subjects.forEach(subject => {
+    (subject.assignments || []).forEach((item, i) => {
+      allAssignments.push({
+        ...item,
+        subject: subject.name,
+        subjectId: subject.id,
+        key: `${subject.id}:${item.id || "assignment"}:${i}`,
+        module: item.module || null
+      });
+    });
+
+    (subject.readings || []).forEach((item, i) => {
+      allResources.push({
+        ...item,
+        kind: "reading",
+        subject: subject.name,
+        subjectId: subject.id,
+        key: `${subject.id}:reading:${item.id || i}`
+      });
+    });
+
+    (subject.notes || []).forEach((item, i) => {
+      allResources.push({
+        ...item,
+        kind: "note",
+        subject: subject.name,
+        subjectId: subject.id,
+        key: `${subject.id}:note:${item.id || i}`
+      });
+    });
+  });
+
+  general.forEach((item, i) => {
+    allAssignments.push({
+      ...item,
+      subject: "General",
+      subjectId: "general",
+      key: `general:${item.id || "assignment"}:${i}`,
+      module: null
+    });
+  });
+
+  addPersonalToAssignments();
+  render();
+}
+function toggleCompletion(key) {
     const item = allAssignments.find(a => a.key === key);
     if (!item) return;
     if (getDone(item)) { setCompletion(item, false); return; }
